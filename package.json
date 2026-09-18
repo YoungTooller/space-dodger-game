@@ -1,9 +1,14 @@
 {
-  "name": "space-dodger",
+  "name": "space-dodger-game",
   "version": "1.0.0",
-  "description": "Бесконечный аркадный уворот на Phaser 3: космический корабль уклоняется от астероидов и дронов.",
   "private": true,
+  "description": "",
   "scripts": {
-    "start": "npx live-server . --port=8080 --open=/index.html"
+    "start": "node server/server.js",
+    "dev": "node --watch server/server.js"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "express": "^4.19.2"
   }
 }
