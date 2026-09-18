@@ -1,0 +1,9 @@
+{
+  "name": "space-dodger",
+  "version": "1.0.0",
+  "description": "Бесконечный аркадный уворот на Phaser 3: космический корабль уклоняется от астероидов и дронов.",
+  "private": true,
+  "scripts": {
+    "start": "npx live-server . --port=8080 --open=/index.html"
+  }
+}

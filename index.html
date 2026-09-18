@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Space Dodger</title>
+  <meta
+    name="description"
+    content="Space Dodger — браузерная 2D-аркада на Phaser 3. Уводите корабль от астероидов и дронов, ловите щит, бейте свой рекорд."
+  />
+  <link rel="icon" href="data:," />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600&display=swap"
+    rel="stylesheet"
+  />
+  <link rel="stylesheet" href="css/landing.css" />
+</head>
+<body>
+  <div class="stars-bg" aria-hidden="true"></div>
+
+  <header class="topbar">
+    <span class="logotype">Space&nbsp;Dodger</span>
+    <a class="topbar-link" href="game/index.html">Играть</a>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="hero-content">
+        <h1>Уворачивайся.<br />Ускоряйся.<br />Лети дальше всех.</h1>
+        <p class="hero-sub">
+          Бесконечная аркада про маленький корабль, который каждые пятнадцать
+          секунд жалеет, что согласился на этот рейс. Астероиды летят гуще,
+          дрон петляет хитрее — а вы уводите нос корабля в сторону и считаете
+          очки.
+        </p>
+        <div class="hero-actions">
+          <a class="btn-primary" href="game/index.html">Играть</a>
+          <a class="btn-ghost" href="#controls">Как управлять</a>
+        </div>
+        <p class="hero-meta">
+          Работает прямо в браузере на Phaser 3. Рекорд сохраняется у вас
+          локально — регистрация не нужна.
+        </p>
+      </div>
+
+      <div class="hero-art" aria-hidden="true">
+        <svg viewBox="0 0 320 380" class="hero-svg">
+          <polygon class="rock rock-a" points="40,60 58,48 76,58 80,80 62,96 42,86 34,70" />
+          <polygon class="rock rock-b" points="230,40 260,32 284,52 278,80 250,90 226,68" />
+          <polygon class="rock rock-c" points="248,200 268,192 282,208 276,228 256,232 244,216" />
+          <g class="drone" transform="translate(60,220)">
+            <polygon points="14,8 0,0 0,16" />
+            <polygon points="72,8 86,0 86,16" />
+            <rect x="14" y="0" width="58" height="16" rx="5" />
+            <circle cx="43" cy="8" r="4" class="drone-eye" />
+          </g>
+          <g class="ship" transform="translate(150,150)">
+            <polygon class="ship-nose" points="14,0 0,20 28,20" />
+            <rect class="ship-body" x="0" y="14" width="28" height="32" rx="6" />
+            <rect class="ship-flame" x="3" y="42" width="6" height="10" />
+            <rect class="ship-flame" x="19" y="42" width="6" height="10" />
+          </g>
+          <circle class="shield-ring" cx="230" cy="290" r="16" />
+        </svg>
+      </div>
+    </section>
+
+    <section class="briefing" id="features">
+      <h2>Что вас ждёт в полёте</h2>
+
+      <div class="briefing-rows">
+        <article class="briefing-row">
+          <svg class="row-icon" viewBox="0 0 60 60">
+            <polygon
+              class="icon-rock"
+              points="30,6 40,10 50,20 52,32 44,44 32,50 20,46 10,36 8,22 16,12"
+            />
+          </svg>
+          <div class="row-text">
+            <h3>Три типа препятствий</h3>
+            <p>
+              Мелкие астероиды проносятся быстро, крупные глыбы медленно
+              перекрывают полосу, а дрон летит по синусоиде, так что
+              предугадать его траекторию с первого раза не выйдет.
+            </p>
+          </div>
+        </article>
+
+        <article class="briefing-row">
+          <svg class="row-icon" viewBox="0 0 60 60">
+            <circle class="icon-shield-ring" cx="30" cy="30" r="22" />
+            <circle class="icon-shield-fill" cx="30" cy="30" r="14" />
+          </svg>
+          <div class="row-text">
+            <h3>Бонус «Щит»</h3>
+            <p>
+              Раз в 9–13 секунд появляется бирюзовая сфера. Поймайте её — и
+              три секунды любые столкновения будут просто разлетаться в
+              стороны, не задевая корабль.
+            </p>
+          </div>
+        </article>
+
+        <article class="briefing-row">
+          <svg class="row-icon" viewBox="0 0 60 60">
+            <path
+              class="icon-speed"
+              d="M10 42 L24 24 L34 32 L50 12"
+              fill="none"
+              stroke-width="5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <circle class="icon-speed-dot" cx="50" cy="12" r="5" />
+          </svg>
+          <div class="row-text">
+            <h3>Сложность растёт сама</h3>
+            <p>
+              Каждые 15 секунд скорость препятствий и частота их появления
+              увеличиваются. Игра не заканчивается — заканчиваетесь вы, когда
+              перестаёте успевать.
+            </p>
+          </div>
+        </article>
+
+        <article class="briefing-row">
+          <svg class="row-icon" viewBox="0 0 60 60">
+            <rect class="icon-phone" x="18" y="6" width="24" height="48" rx="5" />
+            <rect class="icon-phone-screen" x="21" y="12" width="18" height="32" rx="1" />
+          </svg>
+          <div class="row-text">
+            <h3>Клавиатура или тап</h3>
+            <p>
+              На компьютере — стрелки или A/D. На телефоне — просто держите
+              палец на левой или правой половине экрана. Холст сам
+              подстраивается под размер окна.
+            </p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <section class="controls" id="controls">
+      <h2>Управление</h2>
+      <div class="controls-columns">
+        <div class="controls-col">
+          <h3>На компьютере</h3>
+          <ul>
+            <li><kbd>←</kbd> / <kbd>A</kbd> — влево</li>
+            <li><kbd>→</kbd> / <kbd>D</kbd> — вправо</li>
+            <li><kbd>Space</kbd> / <kbd>Enter</kbd> — рестарт после гибели</li>
+          </ul>
+        </div>
+        <div class="controls-col">
+          <h3>На телефоне и планшете</h3>
+          <ul>
+            <li>Тап и удержание слева от центра экрана — влево</li>
+            <li>Тап и удержание справа от центра экрана — вправо</li>
+            <li>Тап по кнопке «Играть снова» — рестарт</li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <section class="cta-footer">
+      <h2>Готовы к вылету?</h2>
+      <a class="btn-primary large" href="game/index.html">Играть в Space Dodger</a>
+    </section>
+  </main>
+
+  <footer>
+    <p>Сделано на Phaser 3. Исходный код игры лежит рядом, в папке <code>game/</code>.</p>
+  </footer>
+</body>
+</html>
