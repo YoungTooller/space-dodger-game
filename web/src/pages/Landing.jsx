@@ -40,8 +40,7 @@ export default function Landing() {
               </a>
             </div>
             <p className="hero-meta">
-              Работает прямо в браузере на Phaser 3. Рекорд сохраняется у вас
-              локально — регистрация не нужна.
+              Работает прямо в браузере на Phaser 3.
             </p>
           </div>
 
@@ -153,7 +152,7 @@ export default function Landing() {
 
       <footer>
         <p>
-          Сделано на Phaser 3 и React. Исходный код игры лежит рядом, в папке{' '}
+          Сделано на Phaser 3 и React. Исходный код игры на GitHub
           <code>public/game/</code>.
         </p>
       </footer>
