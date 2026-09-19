@@ -1,7 +1,12 @@
+import { useState } from 'react';
 import HeroArt from '../components/HeroArt.jsx';
 import BriefingRow from '../components/BriefingRow.jsx';
+import FeedbackModal from '../components/FeedbackModal.jsx';
+import { Link } from 'react-router-dom';
 
 export default function Landing() {
+  const [isFeedbackOpen, setFeedbackOpen] = useState(false);
+
   return (
     <>
       <div className="stars-bg" aria-hidden="true" />
@@ -9,6 +14,12 @@ export default function Landing() {
       <header className="topbar">
         <span className="logotype">Space&nbsp;Dodger</span>
         <nav className="topbar-actions">
+          <button className="topbar-link" type="button" onClick={() => setFeedbackOpen(true)}>
+            Оставить отзыв
+          </button>
+          <Link className="topbar-link" to="/reviews">
+            Отзывы
+          </Link>
           <a className="topbar-link" href="/game/">
             Играть
           </a>
@@ -40,7 +51,8 @@ export default function Landing() {
               </a>
             </div>
             <p className="hero-meta">
-              Работает прямо в браузере на Phaser 3.
+              Работает прямо в браузере на Phaser 3. Рекорд сохраняется у вас
+              локально — регистрация не нужна.
             </p>
           </div>
 
@@ -152,10 +164,12 @@ export default function Landing() {
 
       <footer>
         <p>
-          Сделано на Phaser 3 и React. Исходный код игры на GitHub
+          Сделано на Phaser 3 и React. Исходный код игры лежит рядом, в папке{' '}
           <code>public/game/</code>.
         </p>
       </footer>
+
+      {isFeedbackOpen && <FeedbackModal onClose={() => setFeedbackOpen(false)} />}
     </>
   );
 }
