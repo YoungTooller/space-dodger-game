@@ -21,11 +21,8 @@ libs/
 # Env files, just in case
 .env
 
-# SQLite база отзывов (создаётся автоматически на сервере)
-server/*.db
-server/*.db-journal
-server/*.db-wal
-server/*.db-shm
+# SQLite база отзывов
+server/data/
 
 # Сборка React
 web/dist/
