@@ -1,3 +1,8 @@
+/**
+ * PlayScene — основная игровая сцена.
+ * Корабль двигается влево/вправо у нижней части экрана и стреляет вверх,
+ * сверху вниз летят препятствия и бонус «Щит».
+ */
 class PlayScene extends Phaser.Scene {
   constructor() {
     super('PlayScene');
@@ -10,29 +15,48 @@ class PlayScene extends Phaser.Scene {
     this.spawnDelay = 1100;
     this.shielded = false;
     this.isGameOver = false;
+    this.isPaused = false;
     this.touchDir = 0;
+    this.movePointerId = null;
+    this.fireHeld = false;
+    this.fireCooldown = 0;
+    this.playTimeMs = 0;
+    this.hunterWarned = false;
   }
 
   create() {
     const { width, height } = this.scale;
+
+    this.isTouch = this.sys.game.device.input.touch;
+    // На телефонах корабль чуть выше, чтобы не перекрываться кнопкой «огонь»
+    this.shipBottomOffset = this.isTouch ? 130 : 90;
 
     this.cameras.main.setBackgroundColor('#070812');
 
     this.createTextures();
     this.createStarfield(width, height);
 
-    this.player = this.physics.add.image(width / 2, height - 90, 'ship');
+    this.player = this.physics.add.image(width / 2, height - this.shipBottomOffset, 'ship');
     this.player.setCollideWorldBounds(true);
     this.player.body.setSize(28, 40, true);
     this.player.setDepth(10);
 
     this.obstacles = this.physics.add.group();
     this.pickups = this.physics.add.group();
+    this.bullets = this.physics.add.group();
 
     this.physics.world.setBounds(0, 0, width, height);
 
     this.physics.add.overlap(this.player, this.obstacles, this.hitObstacle, null, this);
     this.physics.add.overlap(this.player, this.pickups, this.collectShield, null, this);
+    // Пули поражают только «стреляемые» цели (охотника), остальное пролетает насквозь
+    this.physics.add.overlap(
+      this.bullets,
+      this.obstacles,
+      this.bulletHitObstacle,
+      this.bulletCanHit,
+      this
+    );
 
     this.setupInput();
     this.setupUI(width, height);
@@ -59,11 +83,15 @@ class PlayScene extends Phaser.Scene {
     });
 
     this.scale.on('resize', this.onResize, this);
+    this.events.once('shutdown', () => this.scale.off('resize', this.onResize, this));
   }
 
-  createTextures() {
-    if (this.textures.exists('ship')) return;
+  // ---------- Генерация текстур (без внешних картинок) ----------
 
+  createTextures() {
+    if (this.textures.exists('ship')) return; // текстуры создаются один раз на сессию
+
+    // Корабль: белый корпус + фиолетовый "нос" + бирюзовые двигатели
     const ship = this.make.graphics({ x: 0, y: 0, add: false });
     ship.fillStyle(0xf4f6fb, 1);
     ship.fillRoundedRect(0, 14, 28, 32, 6);
@@ -78,6 +106,7 @@ class PlayScene extends Phaser.Scene {
     this.drawRock('ast_small', 22, 0xc1633b);
     this.drawRock('ast_medium', 42, 0x8a8f98);
 
+    // Дрон: корпус + "крылья"
     const drone = this.make.graphics({ x: 0, y: 0, add: false });
     drone.fillStyle(0x9c2e6b, 1);
     drone.fillTriangle(8, 8, 0, 0, 0, 16);
@@ -89,6 +118,29 @@ class PlayScene extends Phaser.Scene {
     drone.generateTexture('drone', 50, 16);
     drone.destroy();
 
+    // Охотник: оранжевый "наконечник" носом вниз с жёлтым глазом
+    const hunter = this.make.graphics({ x: 0, y: 0, add: false });
+    hunter.fillStyle(0xff6b3d, 1);
+    hunter.fillTriangle(0, 0, 38, 0, 19, 42);
+    hunter.fillStyle(0x5c1608, 1);
+    hunter.fillTriangle(8, 4, 30, 4, 19, 26);
+    hunter.fillStyle(0xffd166, 1);
+    hunter.fillCircle(19, 12, 5);
+    hunter.fillStyle(0x2a0a02, 1);
+    hunter.fillCircle(19, 13, 2);
+    hunter.generateTexture('hunter', 38, 42);
+    hunter.destroy();
+
+    // Пуля игрока
+    const bullet = this.make.graphics({ x: 0, y: 0, add: false });
+    bullet.fillStyle(0x4fd8e0, 1);
+    bullet.fillRoundedRect(0, 0, 6, 16, 3);
+    bullet.fillStyle(0xffffff, 0.9);
+    bullet.fillRect(2, 2, 2, 8);
+    bullet.generateTexture('bullet', 6, 16);
+    bullet.destroy();
+
+    // Бонус "Щит"
     const shield = this.make.graphics({ x: 0, y: 0, add: false });
     shield.lineStyle(3, 0x4fd8e0, 1);
     shield.strokeCircle(14, 14, 12);
@@ -97,6 +149,7 @@ class PlayScene extends Phaser.Scene {
     shield.generateTexture('shield_pickup', 28, 28);
     shield.destroy();
 
+    // Текстуры звёздного фона (два слоя параллакса)
     this.drawStarfield('starfield_far', 320, 55, 0.25, 1);
     this.drawStarfield('starfield_near', 320, 35, 0.55, 2);
   }
@@ -141,21 +194,39 @@ class PlayScene extends Phaser.Scene {
       .setDepth(1);
   }
 
+  // ---------- Управление ----------
+
   setupInput() {
     this.cursors = this.input.keyboard.createCursorKeys();
     this.keys = this.input.keyboard.addKeys('W,A,S,D');
 
-    const updateTouch = (pointer) => {
-      this.touchDir = pointer.x < this.scale.width / 2 ? -1 : 1;
-    };
-    this.input.on('pointerdown', updateTouch);
+    const dirFromPointer = (pointer) => (pointer.x < this.scale.width / 2 ? -1 : 1);
+
+    // Движение тапами по левой/правой половине экрана.
+    // Нажатия на кнопки (пауза, «огонь») движением не считаются.
+    this.input.on('pointerdown', (pointer, currentlyOver) => {
+      if (this.isPaused || this.isGameOver) return;
+      if (currentlyOver && currentlyOver.length > 0) return;
+      this.movePointerId = pointer.id;
+      this.touchDir = dirFromPointer(pointer);
+    });
     this.input.on('pointermove', (pointer) => {
-      if (pointer.isDown) updateTouch(pointer);
+      if (pointer.isDown && pointer.id === this.movePointerId) {
+        this.touchDir = dirFromPointer(pointer);
+      }
     });
-    this.input.on('pointerup', () => {
-      this.touchDir = 0;
+    this.input.on('pointerup', (pointer) => {
+      if (pointer.id === this.movePointerId) {
+        this.touchDir = 0;
+        this.movePointerId = null;
+      }
     });
+
+    this.input.keyboard.on('keydown-ESC', () => this.togglePause());
+    this.input.keyboard.on('keydown-P', () => this.togglePause());
   }
+
+  // ---------- UI ----------
 
   setupUI(width, height) {
     const base = { fontFamily: 'Verdana, sans-serif', color: '#f4f6fb' };
@@ -168,44 +239,158 @@ class PlayScene extends Phaser.Scene {
       .text(20, 44, `Рекорд: ${this.best}`, { ...base, fontSize: '16px', color: '#9aa3b5' })
       .setDepth(20);
 
+    this.pauseButton = this.add
+      .text(width - 20, 16, '❚❚', { ...base, fontSize: '22px' })
+      .setOrigin(1, 0)
+      .setPadding(10, 6, 10, 6)
+      .setInteractive({ useHandCursor: true })
+      .setDepth(20);
+    this.pauseButton.on('pointerdown', () => this.togglePause());
+
+    const hint = this.isTouch
+      ? 'Тап слева/справа — движение\nКруглая кнопка внизу — выстрел'
+      : '← A / D → — движение\n↑ / W — выстрел\nEsc / P — пауза';
     this.hintText = this.add
-      .text(width / 2, height - 20, '← A/D → или тап по левой/правой части экрана', {
+      .text(width / 2, 90, hint, {
         ...base,
         fontSize: '14px',
         color: '#6b7280',
+        align: 'center',
+        lineSpacing: 4,
       })
-      .setOrigin(0.5, 1)
+      .setOrigin(0.5, 0)
       .setDepth(20);
-    this.tweens.add({ targets: this.hintText, alpha: 0, delay: 3500, duration: 1000 });
+    this.tweens.add({ targets: this.hintText, alpha: 0, delay: 5000, duration: 1000 });
 
     this.flashText = this.add
       .text(width / 2, height * 0.3, '', {
         ...base,
-        fontSize: '28px',
+        fontSize: '24px',
         color: '#4fd8e0',
         fontStyle: 'bold',
+        align: 'center',
       })
       .setOrigin(0.5)
       .setAlpha(0)
       .setDepth(20);
+
+    if (this.isTouch) this.createFireButton(width, height);
+  }
+
+  createFireButton(width, height) {
+    const radius = 32;
+    const circle = this.add
+      .circle(0, 0, radius, 0x4fd8e0, 0.18)
+      .setStrokeStyle(2, 0x4fd8e0, 0.9)
+      .setDepth(20);
+    const label = this.add
+      .text(0, 0, '▲', { fontFamily: 'Verdana, sans-serif', fontSize: '22px', color: '#4fd8e0' })
+      .setOrigin(0.5)
+      .setDepth(21);
+    const zone = this.add.zone(0, 0, radius * 2 + 16, radius * 2 + 16).setInteractive().setDepth(22);
+
+    const release = () => {
+      this.fireHeld = false;
+      circle.setFillStyle(0x4fd8e0, 0.18);
+    };
+    zone.on('pointerdown', () => {
+      if (this.isPaused || this.isGameOver) return;
+      this.fireHeld = true;
+      circle.setFillStyle(0x4fd8e0, 0.45);
+    });
+    zone.on('pointerup', release);
+    zone.on('pointerout', release);
+    zone.on('pointerupoutside', release);
+
+    this.fireUI = { circle, label, zone };
+    this.positionFireButton(width, height);
+  }
+
+  positionFireButton(width, height) {
+    if (!this.fireUI) return;
+    const x = width / 2;
+    const y = height - 48;
+    this.fireUI.circle.setPosition(x, y);
+    this.fireUI.label.setPosition(x, y);
+    this.fireUI.zone.setPosition(x, y);
   }
 
   flashMessage(msg) {
     this.flashText.setText(msg);
     this.flashText.setAlpha(1);
     this.tweens.killTweensOf(this.flashText);
-    this.tweens.add({ targets: this.flashText, alpha: 0, duration: 1000, delay: 500 });
+    this.tweens.add({ targets: this.flashText, alpha: 0, duration: 1000, delay: 900 });
   }
+
+  addScore(points) {
+    this.score += points;
+    this.scoreText.setText('Очки: ' + this.score);
+  }
+
+  // ---------- Стрельба ----------
+
+  fire() {
+    if (this.fireCooldown > 0) return;
+    this.fireCooldown = 320; // мс между выстрелами
+
+    const bullet = this.bullets.create(this.player.x, this.player.y - 30, 'bullet');
+    bullet.setDepth(8);
+    bullet.body.setSize(6, 16, true);
+    bullet.body.setVelocityY(-700);
+  }
+
+  bulletCanHit(bullet, obstacle) {
+    const type = obstacle.getData('type');
+    return !!(type && type.shootable);
+  }
+
+  bulletHitObstacle(bullet, obstacle) {
+    const type = obstacle.getData('type');
+    bullet.destroy();
+
+    this.spawnExplosion(obstacle.x, obstacle.y, 0xff6b3d);
+    obstacle.setData('scored', true);
+    obstacle.destroy();
+    this.addScore(type.killScore || 1);
+  }
+
+  spawnExplosion(x, y, color) {
+    const boom = this.add.circle(x, y, 14, color, 0.9).setDepth(9);
+    this.tweens.add({
+      targets: boom,
+      scale: 2.6,
+      alpha: 0,
+      duration: 260,
+      onComplete: () => boom.destroy(),
+    });
+  }
+
+  // ---------- Спавн объектов ----------
 
   spawnObstacle() {
     if (this.isGameOver) return;
     const width = this.scale.width;
 
-    const types = [
+    const allTypes = [
       { key: 'ast_small', baseSpeed: 230, score: 1, w: 22, h: 22, weight: 5 },
       { key: 'ast_medium', baseSpeed: 150, score: 1, w: 42, h: 42, weight: 3 },
       { key: 'drone', baseSpeed: 170, score: 1, w: 50, h: 16, weight: 2, zigzag: true },
+      // Охотник: появляется не сразу, подруливает к игроку, сбивается выстрелом
+      {
+        key: 'hunter',
+        baseSpeed: 110,
+        score: 1,
+        killScore: 3,
+        w: 38,
+        h: 42,
+        weight: 2,
+        homing: true,
+        shootable: true,
+        minTime: 12000,
+      },
     ];
+
+    const types = allTypes.filter((t) => !t.minTime || this.playTimeMs >= t.minTime);
     const total = types.reduce((sum, t) => sum + t.weight, 0);
     let roll = Phaser.Math.Between(1, total);
     let type = types[0];
@@ -228,8 +413,13 @@ class PlayScene extends Phaser.Scene {
     obstacle.setData('phase', Phaser.Math.FloatBetween(0, Math.PI * 2));
     obstacle.body.setVelocityY(type.baseSpeed * this.speedMultiplier);
 
-    if (type.key !== 'drone') {
+    if (type.key === 'ast_small' || type.key === 'ast_medium') {
       obstacle.setAngularVelocity(Phaser.Math.Between(-60, 60));
+    }
+
+    if (type.homing && !this.hunterWarned) {
+      this.hunterWarned = true;
+      this.flashMessage(this.isTouch ? 'Охотник!\nСбей его выстрелом' : 'Охотник!\nСбей его — W / ↑');
     }
   }
 
@@ -250,6 +440,8 @@ class PlayScene extends Phaser.Scene {
     });
   }
 
+  // ---------- Сложность ----------
+
   increaseDifficulty() {
     this.speedMultiplier = Math.min(this.speedMultiplier * 1.12, 3.2);
     this.spawnDelay = Math.max(this.spawnDelay * 0.92, 420);
@@ -264,6 +456,8 @@ class PlayScene extends Phaser.Scene {
 
     this.flashMessage('Ускорение!');
   }
+
+  // ---------- Столкновения ----------
 
   hitObstacle(player, obstacle) {
     if (this.shielded) {
@@ -303,12 +497,102 @@ class PlayScene extends Phaser.Scene {
     if (this.shieldRing) this.shieldRing.setVisible(false);
   }
 
+  // ---------- Пауза ----------
+
+  togglePause() {
+    if (this.isGameOver) return;
+    if (this.isPaused) this.resumeGame();
+    else this.pauseGame();
+  }
+
+  pauseGame() {
+    this.isPaused = true;
+    this.touchDir = 0;
+    this.movePointerId = null;
+    this.fireHeld = false;
+
+    this.physics.pause();
+    [this.obstacleTimer, this.pickupTimer, this.difficultyTimer, this.shieldTimerEvent].forEach(
+      (t) => t && (t.paused = true)
+    );
+
+    this.showPauseOverlay();
+  }
+
+  resumeGame() {
+    this.isPaused = false;
+    this.touchDir = 0;
+    this.movePointerId = null;
+
+    this.physics.resume();
+    [this.obstacleTimer, this.pickupTimer, this.difficultyTimer, this.shieldTimerEvent].forEach(
+      (t) => t && (t.paused = false)
+    );
+
+    this.hidePauseOverlay();
+  }
+
+  showPauseOverlay() {
+    const { width, height } = this.scale;
+    const base = { fontFamily: 'Verdana, sans-serif', color: '#f4f6fb' };
+
+    const bg = this.add.rectangle(width / 2, height / 2, width, height, 0x070812, 0.78);
+
+    const title = this.add
+      .text(width / 2, height / 2 - 76, 'Пауза', { ...base, fontSize: '30px', fontStyle: 'bold' })
+      .setOrigin(0.5);
+
+    const resumeBtn = this.add
+      .text(width / 2, height / 2, 'Продолжить', {
+        ...base,
+        fontSize: '20px',
+        color: '#070812',
+        backgroundColor: '#4fd8e0',
+        padding: { x: 26, y: 12 },
+      })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+    resumeBtn.on('pointerdown', () => this.resumeGame());
+    resumeBtn.on('pointerover', () => resumeBtn.setStyle({ backgroundColor: '#7c5cff', color: '#f4f6fb' }));
+    resumeBtn.on('pointerout', () => resumeBtn.setStyle({ backgroundColor: '#4fd8e0', color: '#070812' }));
+
+    const exitBtn = this.add
+      .text(width / 2, height / 2 + 66, 'Выйти на лендинг', {
+        ...base,
+        fontSize: '16px',
+        color: '#9aa3b5',
+      })
+      .setOrigin(0.5)
+      .setInteractive({ useHandCursor: true });
+    exitBtn.on('pointerdown', () => this.exitToLanding());
+    exitBtn.on('pointerover', () => exitBtn.setColor('#4fd8e0'));
+    exitBtn.on('pointerout', () => exitBtn.setColor('#9aa3b5'));
+
+    this.pauseOverlay = this.add.container(0, 0, [bg, title, resumeBtn, exitBtn]).setDepth(30);
+  }
+
+  hidePauseOverlay() {
+    if (this.pauseOverlay) {
+      this.pauseOverlay.destroy(true);
+      this.pauseOverlay = null;
+    }
+  }
+
+  exitToLanding() {
+    window.location.href = '/';
+  }
+
+  // ---------- Game Over ----------
+
   endGame() {
     if (this.isGameOver) return;
     this.isGameOver = true;
+    this.fireHeld = false;
 
     this.physics.pause();
     this.player.setTint(0xff5555);
+    if (this.pauseButton) this.pauseButton.disableInteractive().setAlpha(0.3);
+    if (this.fireUI) this.fireUI.zone.disableInteractive();
     [this.obstacleTimer, this.pickupTimer, this.difficultyTimer].forEach(
       (t) => t && t.remove(false)
     );
@@ -323,6 +607,8 @@ class PlayScene extends Phaser.Scene {
     });
   }
 
+  // ---------- Ресайз окна ----------
+
   onResize(gameSize) {
     const width = gameSize.width;
     const height = gameSize.height;
@@ -330,7 +616,7 @@ class PlayScene extends Phaser.Scene {
     this.physics.world.setBounds(0, 0, width, height);
 
     if (this.player) {
-      this.player.y = Math.min(this.player.y, height - 40);
+      this.player.y = height - this.shipBottomOffset;
       this.player.x = Phaser.Math.Clamp(this.player.x, 20, width - 20);
     }
     if (this.starsFar) {
@@ -341,12 +627,25 @@ class PlayScene extends Phaser.Scene {
       this.starsNear.setSize(width, height);
       this.starsNear.setPosition(width / 2, height / 2);
     }
-    if (this.hintText) this.hintText.setPosition(width / 2, height - 20);
+    if (this.hintText) this.hintText.setPosition(width / 2, 90);
     if (this.flashText) this.flashText.setPosition(width / 2, height * 0.3);
+    if (this.pauseButton) this.pauseButton.setPosition(width - 20, 16);
+    this.positionFireButton(width, height);
+
+    if (this.pauseOverlay) {
+      // проще перерисовать оверлей заново под новый размер, чем пересчитывать каждый элемент
+      this.hidePauseOverlay();
+      this.showPauseOverlay();
+    }
   }
 
+  // ---------- Игровой цикл ----------
+
   update(time, delta) {
-    if (this.isGameOver) return;
+    if (this.isGameOver || this.isPaused) return;
+
+    this.playTimeMs += delta;
+    this.fireCooldown -= delta;
 
     const dt = delta / 16.6667;
     this.starsFar.tilePositionY -= 0.4 * this.speedMultiplier * dt;
@@ -358,6 +657,11 @@ class PlayScene extends Phaser.Scene {
     else if (this.touchDir !== 0) dir = this.touchDir;
 
     this.player.setVelocityX(dir * 420);
+
+    // Стрельба: стрелка вверх / W (можно удерживать) или кнопка на экране
+    if (this.cursors.up.isDown || this.keys.W.isDown || this.fireHeld) {
+      this.fire();
+    }
 
     if (this.shieldRing && this.shielded) {
       this.shieldRing.setPosition(this.player.x, this.player.y);
@@ -377,13 +681,27 @@ class PlayScene extends Phaser.Scene {
         );
       }
 
+      // Охотник стремится встать напротив игрока (пока не пролетел мимо него)
+      if (type && type.homing) {
+        if (obstacle.y < this.player.y) {
+          const maxSpeed = 150 * Math.min(this.speedMultiplier, 2);
+          const dx = this.player.x - obstacle.x;
+          obstacle.body.setVelocityX(Phaser.Math.Clamp(dx * 3, -maxSpeed, maxSpeed));
+        } else {
+          obstacle.body.setVelocityX(0);
+        }
+      }
+
       if (obstacle.y > this.scale.height + 60) {
         if (!obstacle.getData('scored')) {
-          this.score += type ? type.score : 1;
-          this.scoreText.setText('Очки: ' + this.score);
+          this.addScore(type ? type.score : 1);
         }
         obstacle.destroy();
       }
+    });
+
+    this.bullets.children.each((bullet) => {
+      if (bullet.active && bullet.y < -30) bullet.destroy();
     });
 
     this.pickups.children.each((pickup) => {
