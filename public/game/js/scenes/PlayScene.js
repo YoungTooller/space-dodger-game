@@ -14,6 +14,8 @@ class PlayScene extends Phaser.Scene {
     this.speedMultiplier = 1;
     this.spawnDelay = 1100;
     this.shielded = false;
+    this.shieldDuration = 3000; // мс
+    this.shieldRemaining = 0;
     this.isGameOver = false;
     this.isPaused = false;
     this.touchDir = 0;
@@ -22,6 +24,7 @@ class PlayScene extends Phaser.Scene {
     this.fireCooldown = 0;
     this.playTimeMs = 0;
     this.hunterWarned = false;
+    this.gunnerWarned = false;
   }
 
   create() {
@@ -43,13 +46,15 @@ class PlayScene extends Phaser.Scene {
 
     this.obstacles = this.physics.add.group();
     this.pickups = this.physics.add.group();
-    this.bullets = this.physics.add.group();
+    this.bullets = this.physics.add.group(); // пули игрока
+    this.enemyBullets = this.physics.add.group(); // пули стрелков
 
     this.physics.world.setBounds(0, 0, width, height);
 
     this.physics.add.overlap(this.player, this.obstacles, this.hitObstacle, null, this);
     this.physics.add.overlap(this.player, this.pickups, this.collectShield, null, this);
-    // Пули поражают только «стреляемые» цели (охотника), остальное пролетает насквозь
+    this.physics.add.overlap(this.player, this.enemyBullets, this.hitEnemyBullet, null, this);
+    // Пули игрока поражают только «стреляемые» цели, остальное пролетает насквозь
     this.physics.add.overlap(
       this.bullets,
       this.obstacles,
@@ -131,6 +136,20 @@ class PlayScene extends Phaser.Scene {
     hunter.generateTexture('hunter', 38, 42);
     hunter.destroy();
 
+    // Стрелок: малиновый корпус с крыльями и пушкой, смотрящей вниз
+    const gunner = this.make.graphics({ x: 0, y: 0, add: false });
+    gunner.fillStyle(0x7a1424, 1);
+    gunner.fillTriangle(0, 4, 12, 0, 12, 20);
+    gunner.fillTriangle(40, 4, 28, 0, 28, 20);
+    gunner.fillStyle(0xd7263d, 1);
+    gunner.fillRoundedRect(8, 0, 24, 26, 6);
+    gunner.fillStyle(0x2a0a10, 1);
+    gunner.fillRect(16, 24, 8, 10);
+    gunner.fillStyle(0xffd166, 1);
+    gunner.fillCircle(20, 11, 4);
+    gunner.generateTexture('gunner', 40, 34);
+    gunner.destroy();
+
     // Пуля игрока
     const bullet = this.make.graphics({ x: 0, y: 0, add: false });
     bullet.fillStyle(0x4fd8e0, 1);
@@ -139,6 +158,15 @@ class PlayScene extends Phaser.Scene {
     bullet.fillRect(2, 2, 2, 8);
     bullet.generateTexture('bullet', 6, 16);
     bullet.destroy();
+
+    // Пуля стрелка
+    const enemyBullet = this.make.graphics({ x: 0, y: 0, add: false });
+    enemyBullet.fillStyle(0xff4d6d, 1);
+    enemyBullet.fillCircle(5, 5, 5);
+    enemyBullet.fillStyle(0xffffff, 0.9);
+    enemyBullet.fillCircle(5, 5, 2);
+    enemyBullet.generateTexture('enemy_bullet', 10, 10);
+    enemyBullet.destroy();
 
     // Бонус "Щит"
     const shield = this.make.graphics({ x: 0, y: 0, add: false });
@@ -239,6 +267,8 @@ class PlayScene extends Phaser.Scene {
       .text(20, 44, `Рекорд: ${this.best}`, { ...base, fontSize: '16px', color: '#9aa3b5' })
       .setDepth(20);
 
+    this.createShieldHud();
+
     this.pauseButton = this.add
       .text(width - 20, 16, '❚❚', { ...base, fontSize: '22px' })
       .setOrigin(1, 0)
@@ -251,7 +281,7 @@ class PlayScene extends Phaser.Scene {
       ? 'Тап слева/справа — движение\nКруглая кнопка внизу — выстрел'
       : '← A / D → — движение\n↑ / W — выстрел\nEsc / P — пауза';
     this.hintText = this.add
-      .text(width / 2, 90, hint, {
+      .text(width / 2, 104, hint, {
         ...base,
         fontSize: '14px',
         color: '#6b7280',
@@ -275,6 +305,34 @@ class PlayScene extends Phaser.Scene {
       .setDepth(20);
 
     if (this.isTouch) this.createFireButton(width, height);
+  }
+
+  // Индикатор щита в левом верхнем углу: иконка + полоска + секунды до конца
+  createShieldHud() {
+    const y = 76;
+    const barWidth = 110;
+    this.shieldBarWidth = barWidth;
+    this.shieldHud = {
+      icon: this.add
+        .circle(30, y, 8, 0x4fd8e0, 0.25)
+        .setStrokeStyle(2, 0x4fd8e0, 1)
+        .setDepth(20),
+      barBg: this.add.rectangle(46, y, barWidth, 8, 0x1b1f36).setOrigin(0, 0.5).setDepth(20),
+      barFill: this.add.rectangle(46, y, barWidth, 8, 0x4fd8e0).setOrigin(0, 0.5).setDepth(21),
+      label: this.add
+        .text(46 + barWidth + 8, y, '', {
+          fontFamily: 'Verdana, sans-serif',
+          fontSize: '13px',
+          color: '#4fd8e0',
+        })
+        .setOrigin(0, 0.5)
+        .setDepth(20),
+    };
+    this.setShieldHudVisible(false);
+  }
+
+  setShieldHudVisible(visible) {
+    Object.values(this.shieldHud).forEach((obj) => obj.setVisible(visible));
   }
 
   createFireButton(width, height) {
@@ -327,7 +385,7 @@ class PlayScene extends Phaser.Scene {
     this.scoreText.setText('Очки: ' + this.score);
   }
 
-  // ---------- Стрельба ----------
+  // ---------- Стрельба игрока ----------
 
   fire() {
     if (this.fireCooldown > 0) return;
@@ -348,6 +406,15 @@ class PlayScene extends Phaser.Scene {
     const type = obstacle.getData('type');
     bullet.destroy();
 
+    const hp = (obstacle.getData('hp') || 1) - 1;
+    if (hp > 0) {
+      // Цель с запасом прочности: мигнёт белым и полетит дальше
+      obstacle.setData('hp', hp);
+      obstacle.setTintFill(0xffffff);
+      this.time.delayedCall(90, () => obstacle.active && obstacle.clearTint());
+      return;
+    }
+
     this.spawnExplosion(obstacle.x, obstacle.y, 0xff6b3d);
     obstacle.setData('scored', true);
     obstacle.destroy();
@@ -365,6 +432,28 @@ class PlayScene extends Phaser.Scene {
     });
   }
 
+  // ---------- Стрельба врагов ----------
+
+  enemyShoot(shooter) {
+    const bullet = this.enemyBullets.create(shooter.x, shooter.y + 22, 'enemy_bullet');
+    bullet.setDepth(6);
+    bullet.body.setSize(8, 8, true);
+
+    // Целимся в текущее положение игрока (упреждения нет — от пули можно уйти)
+    const angle = Phaser.Math.Angle.Between(bullet.x, bullet.y, this.player.x, this.player.y);
+    const speed = 260 * Math.min(this.speedMultiplier, 1.5);
+    bullet.body.setVelocity(Math.cos(angle) * speed, Math.sin(angle) * speed);
+  }
+
+  hitEnemyBullet(player, bullet) {
+    bullet.destroy();
+    if (this.shielded) {
+      this.cameras.main.flash(120, 79, 216, 224);
+      return;
+    }
+    this.endGame();
+  }
+
   // ---------- Спавн объектов ----------
 
   spawnObstacle() {
@@ -375,7 +464,7 @@ class PlayScene extends Phaser.Scene {
       { key: 'ast_small', baseSpeed: 230, score: 1, w: 22, h: 22, weight: 5 },
       { key: 'ast_medium', baseSpeed: 150, score: 1, w: 42, h: 42, weight: 3 },
       { key: 'drone', baseSpeed: 170, score: 1, w: 50, h: 16, weight: 2, zigzag: true },
-      // Охотник: появляется не сразу, подруливает к игроку, сбивается выстрелом
+      // Охотник: подруливает к игроку, сбивается одним выстрелом
       {
         key: 'hunter',
         baseSpeed: 110,
@@ -385,12 +474,38 @@ class PlayScene extends Phaser.Scene {
         h: 42,
         weight: 2,
         homing: true,
+        homeSpeed: 150,
         shootable: true,
         minTime: 12000,
       },
+      // Стрелок: медленно ползёт к игроку, стреляет в него, нужно 2 попадания
+      {
+        key: 'gunner',
+        baseSpeed: 70,
+        score: 1,
+        killScore: 5,
+        w: 40,
+        h: 34,
+        weight: 2,
+        homing: true,
+        homeSpeed: 90,
+        shootable: true,
+        shoots: true,
+        fireInterval: 1700,
+        hp: 2,
+        minTime: 25000,
+      },
     ];
 
-    const types = allTypes.filter((t) => !t.minTime || this.playTimeMs >= t.minTime);
+    // Не больше одного стрелка на экране одновременно
+    const hasGunner = this.obstacles.getChildren().some((o) => {
+      const t = o.active && o.getData('type');
+      return t && t.key === 'gunner';
+    });
+
+    const types = allTypes.filter(
+      (t) => (!t.minTime || this.playTimeMs >= t.minTime) && !(t.key === 'gunner' && hasGunner)
+    );
     const total = types.reduce((sum, t) => sum + t.weight, 0);
     let roll = Phaser.Math.Between(1, total);
     let type = types[0];
@@ -409,6 +524,8 @@ class PlayScene extends Phaser.Scene {
     obstacle.body.setSize(type.w * 0.8, type.h * 0.8, true);
     obstacle.setData('type', type);
     obstacle.setData('scored', false);
+    obstacle.setData('hp', type.hp || 1);
+    obstacle.setData('nextShot', this.playTimeMs + 1200);
     obstacle.setData('baseX', x);
     obstacle.setData('phase', Phaser.Math.FloatBetween(0, Math.PI * 2));
     obstacle.body.setVelocityY(type.baseSpeed * this.speedMultiplier);
@@ -417,9 +534,13 @@ class PlayScene extends Phaser.Scene {
       obstacle.setAngularVelocity(Phaser.Math.Between(-60, 60));
     }
 
-    if (type.homing && !this.hunterWarned) {
+    if (type.key === 'hunter' && !this.hunterWarned) {
       this.hunterWarned = true;
       this.flashMessage(this.isTouch ? 'Охотник!\nСбей его выстрелом' : 'Охотник!\nСбей его — W / ↑');
+    }
+    if (type.key === 'gunner' && !this.gunnerWarned) {
+      this.gunnerWarned = true;
+      this.flashMessage('Стрелок!\nУворачивайся от пуль\nи сбей его (2 попадания)');
     }
   }
 
@@ -457,7 +578,7 @@ class PlayScene extends Phaser.Scene {
     this.flashMessage('Ускорение!');
   }
 
-  // ---------- Столкновения ----------
+  // ---------- Столкновения и щит ----------
 
   hitObstacle(player, obstacle) {
     if (this.shielded) {
@@ -475,6 +596,7 @@ class PlayScene extends Phaser.Scene {
 
   activateShield() {
     this.shielded = true;
+    this.shieldRemaining = this.shieldDuration; // повторный подбор обновляет таймер
     this.player.setTint(0x4fd8e0);
 
     if (!this.shieldRing) {
@@ -483,18 +605,51 @@ class PlayScene extends Phaser.Scene {
         .setStrokeStyle(2, 0x4fd8e0, 0.9)
         .setDepth(9);
     }
-    this.shieldRing.setVisible(true);
+    this.shieldRing.setVisible(true).setAlpha(1).setScale(1);
 
-    if (this.shieldTimerEvent) this.shieldTimerEvent.remove(false);
-    this.shieldTimerEvent = this.time.delayedCall(3000, this.deactivateShield, [], this);
+    this.setShieldHudVisible(true);
+    this.updateShield(0);
 
     this.flashMessage('Щит активен!');
   }
 
   deactivateShield() {
     this.shielded = false;
+    this.shieldRemaining = 0;
     this.player.clearTint();
     if (this.shieldRing) this.shieldRing.setVisible(false);
+    this.setShieldHudVisible(false);
+  }
+
+  // Вызывается каждый кадр: тратит время щита и обновляет индикацию.
+  // Время считается в update(), поэтому на паузе щит не «сгорает».
+  updateShield(delta) {
+    if (!this.shielded) return;
+
+    this.shieldRemaining -= delta;
+    if (this.shieldRemaining <= 0) {
+      this.deactivateShield();
+      return;
+    }
+
+    const ratio = this.shieldRemaining / this.shieldDuration;
+    const ending = this.shieldRemaining < 1000;
+    // В последнюю секунду щит и корабль мигают — игрок видит, что защита кончается
+    const blinkOn = !ending || Math.floor(this.playTimeMs / 110) % 2 === 0;
+
+    const { barFill, label, icon } = this.shieldHud;
+    barFill.setScale(ratio, 1);
+    barFill.setFillStyle(ending ? 0xff6b3d : 0x4fd8e0);
+    icon.setAlpha(blinkOn ? 1 : 0.3);
+    label.setText(`Щит ${(this.shieldRemaining / 1000).toFixed(1)} с`);
+    label.setColor(ending ? '#ff6b3d' : '#4fd8e0');
+
+    this.shieldRing.setPosition(this.player.x, this.player.y);
+    this.shieldRing.setAlpha(blinkOn ? 1 : 0.2);
+    this.shieldRing.setScale(1 + 0.05 * Math.sin(this.playTimeMs / 150));
+
+    if (blinkOn) this.player.setTint(0x4fd8e0);
+    else this.player.clearTint();
   }
 
   // ---------- Пауза ----------
@@ -512,7 +667,7 @@ class PlayScene extends Phaser.Scene {
     this.fireHeld = false;
 
     this.physics.pause();
-    [this.obstacleTimer, this.pickupTimer, this.difficultyTimer, this.shieldTimerEvent].forEach(
+    [this.obstacleTimer, this.pickupTimer, this.difficultyTimer].forEach(
       (t) => t && (t.paused = true)
     );
 
@@ -525,7 +680,7 @@ class PlayScene extends Phaser.Scene {
     this.movePointerId = null;
 
     this.physics.resume();
-    [this.obstacleTimer, this.pickupTimer, this.difficultyTimer, this.shieldTimerEvent].forEach(
+    [this.obstacleTimer, this.pickupTimer, this.difficultyTimer].forEach(
       (t) => t && (t.paused = false)
     );
 
@@ -534,41 +689,76 @@ class PlayScene extends Phaser.Scene {
 
   showPauseOverlay() {
     const { width, height } = this.scale;
-    const base = { fontFamily: 'Verdana, sans-serif', color: '#f4f6fb' };
+    const cx = width / 2;
+    const cy = height / 2;
+    const btnWidth = Math.min(240, width - 48);
 
-    const bg = this.add.rectangle(width / 2, height / 2, width, height, 0x070812, 0.78);
+    // Затемнение сделано интерактивным, чтобы клики «не проваливались»
+    // на кнопки паузы/огня под ним
+    const dim = this.add.rectangle(cx, cy, width, height, 0x070812, 0.82).setInteractive();
 
     const title = this.add
-      .text(width / 2, height / 2 - 76, 'Пауза', { ...base, fontSize: '30px', fontStyle: 'bold' })
+      .text(cx, cy - 130, 'Пауза', {
+        fontFamily: 'Verdana, sans-serif',
+        fontSize: '30px',
+        fontStyle: 'bold',
+        color: '#f4f6fb',
+      })
       .setOrigin(0.5);
 
-    const resumeBtn = this.add
-      .text(width / 2, height / 2, 'Продолжить', {
-        ...base,
-        fontSize: '20px',
-        color: '#070812',
-        backgroundColor: '#4fd8e0',
-        padding: { x: 26, y: 12 },
-      })
-      .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true });
-    resumeBtn.on('pointerdown', () => this.resumeGame());
-    resumeBtn.on('pointerover', () => resumeBtn.setStyle({ backgroundColor: '#7c5cff', color: '#f4f6fb' }));
-    resumeBtn.on('pointerout', () => resumeBtn.setStyle({ backgroundColor: '#4fd8e0', color: '#070812' }));
+    const resumeBtn = this.createMenuButton(cx, cy - 40, btnWidth, 'Продолжить', 'primary', () =>
+      this.resumeGame()
+    );
+    const restartBtn = this.createMenuButton(cx, cy + 24, btnWidth, 'Начать заново', 'secondary', () =>
+      this.restartGame()
+    );
+    const exitBtn = this.createMenuButton(cx, cy + 88, btnWidth, 'Выйти на лендинг', 'secondary', () =>
+      this.exitToLanding()
+    );
 
-    const exitBtn = this.add
-      .text(width / 2, height / 2 + 66, 'Выйти на лендинг', {
-        ...base,
-        fontSize: '16px',
-        color: '#9aa3b5',
-      })
-      .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true });
-    exitBtn.on('pointerdown', () => this.exitToLanding());
-    exitBtn.on('pointerover', () => exitBtn.setColor('#4fd8e0'));
-    exitBtn.on('pointerout', () => exitBtn.setColor('#9aa3b5'));
+    this.pauseOverlay = this.add
+      .container(0, 0, [dim, title, ...resumeBtn, ...restartBtn, ...exitBtn])
+      .setDepth(30);
+  }
 
-    this.pauseOverlay = this.add.container(0, 0, [bg, title, resumeBtn, exitBtn]).setDepth(30);
+  // Кнопка меню: прямоугольник + подпись. Срабатывает по отпусканию (как обычный клик),
+  // только если нажатие началось на этой же кнопке.
+  createMenuButton(x, y, width, label, variant, onClick) {
+    const palette =
+      variant === 'primary'
+        ? { fill: 0x4fd8e0, hover: 0x7c5cff, down: 0x5a3fd1, text: '#070812', textHover: '#f4f6fb' }
+        : { fill: 0x1b1f36, hover: 0x2a2f52, down: 0x151830, text: '#f4f6fb', textHover: '#4fd8e0' };
+
+    const rect = this.add
+      .rectangle(x, y, width, 48, palette.fill)
+      .setInteractive({ useHandCursor: true });
+    if (variant !== 'primary') rect.setStrokeStyle(1, 0x2a2f52);
+
+    const text = this.add
+      .text(x, y, label, { fontFamily: 'Verdana, sans-serif', fontSize: '18px', color: palette.text })
+      .setOrigin(0.5);
+
+    let pressed = false;
+    rect.on('pointerover', () => {
+      rect.setFillStyle(palette.hover);
+      text.setColor(palette.textHover);
+    });
+    rect.on('pointerout', () => {
+      pressed = false;
+      rect.setFillStyle(palette.fill);
+      text.setColor(palette.text);
+    });
+    rect.on('pointerdown', () => {
+      pressed = true;
+      rect.setFillStyle(palette.down);
+    });
+    rect.on('pointerup', () => {
+      if (!pressed) return;
+      pressed = false;
+      onClick();
+    });
+
+    return [rect, text];
   }
 
   hidePauseOverlay() {
@@ -578,7 +768,21 @@ class PlayScene extends Phaser.Scene {
     }
   }
 
+  saveBest() {
+    if (this.score > this.best) {
+      this.best = this.score;
+      localStorage.setItem('spaceDodgerBest', String(this.best));
+    }
+  }
+
+  restartGame() {
+    this.saveBest();
+    this.physics.resume();
+    this.scene.restart();
+  }
+
   exitToLanding() {
+    this.saveBest(); // рекорд не должен пропадать, если выходим из паузы
     window.location.href = '/';
   }
 
@@ -597,10 +801,7 @@ class PlayScene extends Phaser.Scene {
       (t) => t && t.remove(false)
     );
 
-    if (this.score > this.best) {
-      this.best = this.score;
-      localStorage.setItem('spaceDodgerBest', String(this.best));
-    }
+    this.saveBest();
 
     this.time.delayedCall(450, () => {
       this.scene.start('GameOverScene', { score: this.score, best: this.best });
@@ -627,7 +828,7 @@ class PlayScene extends Phaser.Scene {
       this.starsNear.setSize(width, height);
       this.starsNear.setPosition(width / 2, height / 2);
     }
-    if (this.hintText) this.hintText.setPosition(width / 2, 90);
+    if (this.hintText) this.hintText.setPosition(width / 2, 104);
     if (this.flashText) this.flashText.setPosition(width / 2, height * 0.3);
     if (this.pauseButton) this.pauseButton.setPosition(width - 20, 16);
     this.positionFireButton(width, height);
@@ -646,6 +847,7 @@ class PlayScene extends Phaser.Scene {
 
     this.playTimeMs += delta;
     this.fireCooldown -= delta;
+    this.updateShield(delta);
 
     const dt = delta / 16.6667;
     this.starsFar.tilePositionY -= 0.4 * this.speedMultiplier * dt;
@@ -663,10 +865,6 @@ class PlayScene extends Phaser.Scene {
       this.fire();
     }
 
-    if (this.shieldRing && this.shielded) {
-      this.shieldRing.setPosition(this.player.x, this.player.y);
-    }
-
     this.obstacles.children.each((obstacle) => {
       if (!obstacle.active) return;
       const type = obstacle.getData('type');
@@ -681,15 +879,27 @@ class PlayScene extends Phaser.Scene {
         );
       }
 
-      // Охотник стремится встать напротив игрока (пока не пролетел мимо него)
+      // Охотник и стрелок стремятся встать напротив игрока (пока не пролетели мимо него)
       if (type && type.homing) {
         if (obstacle.y < this.player.y) {
-          const maxSpeed = 150 * Math.min(this.speedMultiplier, 2);
+          const maxSpeed = type.homeSpeed * Math.min(this.speedMultiplier, 2);
           const dx = this.player.x - obstacle.x;
           obstacle.body.setVelocityX(Phaser.Math.Clamp(dx * 3, -maxSpeed, maxSpeed));
         } else {
           obstacle.body.setVelocityX(0);
         }
+      }
+
+      // Стрелок стреляет, пока он на экране и не слишком близко к игроку
+      if (
+        type &&
+        type.shoots &&
+        obstacle.y > 20 &&
+        obstacle.y < this.player.y - 140 &&
+        this.playTimeMs >= obstacle.getData('nextShot')
+      ) {
+        this.enemyShoot(obstacle);
+        obstacle.setData('nextShot', this.playTimeMs + type.fireInterval);
       }
 
       if (obstacle.y > this.scale.height + 60) {
@@ -702,6 +912,18 @@ class PlayScene extends Phaser.Scene {
 
     this.bullets.children.each((bullet) => {
       if (bullet.active && bullet.y < -30) bullet.destroy();
+    });
+
+    this.enemyBullets.children.each((bullet) => {
+      if (!bullet.active) return;
+      if (
+        bullet.y > this.scale.height + 30 ||
+        bullet.y < -30 ||
+        bullet.x < -30 ||
+        bullet.x > this.scale.width + 30
+      ) {
+        bullet.destroy();
+      }
     });
 
     this.pickups.children.each((pickup) => {
