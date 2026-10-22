@@ -8,6 +8,21 @@ class PlayScene extends Phaser.Scene {
     super('PlayScene');
   }
 
+  preload() {
+    const path = 'assets/';
+    [
+      'ship',
+      'ast_small',
+      'ast_medium',
+      'drone',
+      'hunter',
+      'gunner',
+      'bullet',
+      'enemy_bullet',
+      'shield_pickup',
+    ].forEach((key) => this.load.image(key, `${path}${key}.png`));
+  }
+
   init() {
     this.score = 0;
     this.best = parseInt(localStorage.getItem('spaceDodgerBest') || '0', 10);
@@ -41,7 +56,7 @@ class PlayScene extends Phaser.Scene {
 
     this.player = this.physics.add.image(width / 2, height - this.shipBottomOffset, 'ship');
     this.player.setCollideWorldBounds(true);
-    this.player.body.setSize(28, 40, true);
+    this.player.body.setSize(24, 38, true);
     this.player.setDepth(10);
 
     this.obstacles = this.physics.add.group();
@@ -91,112 +106,15 @@ class PlayScene extends Phaser.Scene {
     this.events.once('shutdown', () => this.scale.off('resize', this.onResize, this));
   }
 
-  // ---------- Генерация текстур (без внешних картинок) ----------
+  // ---------- Текстуры ----------
+  // Спрайты кораблей, препятствий, пуль и бонуса лежат в assets/ и грузятся в preload().
+  // Здесь генерируется только бесшовный звёздный фон.
 
   createTextures() {
-    if (this.textures.exists('ship')) return; // текстуры создаются один раз на сессию
+    if (this.textures.exists('starfield_far')) return; // создаём один раз на сессию
 
-    // Корабль: белый корпус + фиолетовый "нос" + бирюзовые двигатели
-    const ship = this.make.graphics({ x: 0, y: 0, add: false });
-    ship.fillStyle(0xf4f6fb, 1);
-    ship.fillRoundedRect(0, 14, 28, 32, 6);
-    ship.fillStyle(0x7c5cff, 1);
-    ship.fillTriangle(14, 0, 0, 20, 28, 20);
-    ship.fillStyle(0x4fd8e0, 1);
-    ship.fillRect(3, 42, 6, 8);
-    ship.fillRect(19, 42, 6, 8);
-    ship.generateTexture('ship', 28, 50);
-    ship.destroy();
-
-    this.drawRock('ast_small', 22, 0xc1633b);
-    this.drawRock('ast_medium', 42, 0x8a8f98);
-
-    // Дрон: корпус + "крылья"
-    const drone = this.make.graphics({ x: 0, y: 0, add: false });
-    drone.fillStyle(0x9c2e6b, 1);
-    drone.fillTriangle(8, 8, 0, 0, 0, 16);
-    drone.fillTriangle(42, 8, 50, 0, 50, 16);
-    drone.fillStyle(0xe14f9c, 1);
-    drone.fillRoundedRect(8, 0, 34, 16, 5);
-    drone.fillStyle(0x2c0f22, 1);
-    drone.fillCircle(25, 8, 4);
-    drone.generateTexture('drone', 50, 16);
-    drone.destroy();
-
-    // Охотник: оранжевый "наконечник" носом вниз с жёлтым глазом
-    const hunter = this.make.graphics({ x: 0, y: 0, add: false });
-    hunter.fillStyle(0xff6b3d, 1);
-    hunter.fillTriangle(0, 0, 38, 0, 19, 42);
-    hunter.fillStyle(0x5c1608, 1);
-    hunter.fillTriangle(8, 4, 30, 4, 19, 26);
-    hunter.fillStyle(0xffd166, 1);
-    hunter.fillCircle(19, 12, 5);
-    hunter.fillStyle(0x2a0a02, 1);
-    hunter.fillCircle(19, 13, 2);
-    hunter.generateTexture('hunter', 38, 42);
-    hunter.destroy();
-
-    // Стрелок: малиновый корпус с крыльями и пушкой, смотрящей вниз
-    const gunner = this.make.graphics({ x: 0, y: 0, add: false });
-    gunner.fillStyle(0x7a1424, 1);
-    gunner.fillTriangle(0, 4, 12, 0, 12, 20);
-    gunner.fillTriangle(40, 4, 28, 0, 28, 20);
-    gunner.fillStyle(0xd7263d, 1);
-    gunner.fillRoundedRect(8, 0, 24, 26, 6);
-    gunner.fillStyle(0x2a0a10, 1);
-    gunner.fillRect(16, 24, 8, 10);
-    gunner.fillStyle(0xffd166, 1);
-    gunner.fillCircle(20, 11, 4);
-    gunner.generateTexture('gunner', 40, 34);
-    gunner.destroy();
-
-    // Пуля игрока
-    const bullet = this.make.graphics({ x: 0, y: 0, add: false });
-    bullet.fillStyle(0x4fd8e0, 1);
-    bullet.fillRoundedRect(0, 0, 6, 16, 3);
-    bullet.fillStyle(0xffffff, 0.9);
-    bullet.fillRect(2, 2, 2, 8);
-    bullet.generateTexture('bullet', 6, 16);
-    bullet.destroy();
-
-    // Пуля стрелка
-    const enemyBullet = this.make.graphics({ x: 0, y: 0, add: false });
-    enemyBullet.fillStyle(0xff4d6d, 1);
-    enemyBullet.fillCircle(5, 5, 5);
-    enemyBullet.fillStyle(0xffffff, 0.9);
-    enemyBullet.fillCircle(5, 5, 2);
-    enemyBullet.generateTexture('enemy_bullet', 10, 10);
-    enemyBullet.destroy();
-
-    // Бонус "Щит"
-    const shield = this.make.graphics({ x: 0, y: 0, add: false });
-    shield.lineStyle(3, 0x4fd8e0, 1);
-    shield.strokeCircle(14, 14, 12);
-    shield.fillStyle(0x4fd8e0, 0.35);
-    shield.fillCircle(14, 14, 8);
-    shield.generateTexture('shield_pickup', 28, 28);
-    shield.destroy();
-
-    // Текстуры звёздного фона (два слоя параллакса)
     this.drawStarfield('starfield_far', 320, 55, 0.25, 1);
     this.drawStarfield('starfield_near', 320, 35, 0.55, 2);
-  }
-
-  drawRock(key, size, color) {
-    const g = this.make.graphics({ x: 0, y: 0, add: false });
-    g.fillStyle(color, 1);
-    const points = [];
-    const spikes = 9;
-    for (let i = 0; i < spikes; i++) {
-      const angle = (i / spikes) * Math.PI * 2;
-      const r = (size / 2) * Phaser.Math.FloatBetween(0.72, 1);
-      points.push(
-        new Phaser.Geom.Point(size / 2 + Math.cos(angle) * r, size / 2 + Math.sin(angle) * r)
-      );
-    }
-    g.fillPoints(points, true);
-    g.generateTexture(key, size, size);
-    g.destroy();
   }
 
   drawStarfield(key, size, count, minAlpha, maxRadius) {
@@ -391,9 +309,9 @@ class PlayScene extends Phaser.Scene {
     if (this.fireCooldown > 0) return;
     this.fireCooldown = 320; // мс между выстрелами
 
-    const bullet = this.bullets.create(this.player.x, this.player.y - 30, 'bullet');
+    const bullet = this.bullets.create(this.player.x, this.player.y - 36, 'bullet');
     bullet.setDepth(8);
-    bullet.body.setSize(6, 16, true);
+    bullet.body.setSize(8, 22, true);
     bullet.body.setVelocityY(-700);
   }
 
@@ -435,9 +353,9 @@ class PlayScene extends Phaser.Scene {
   // ---------- Стрельба врагов ----------
 
   enemyShoot(shooter) {
-    const bullet = this.enemyBullets.create(shooter.x, shooter.y + 22, 'enemy_bullet');
+    const bullet = this.enemyBullets.create(shooter.x, shooter.y + 28, 'enemy_bullet');
     bullet.setDepth(6);
-    bullet.body.setSize(8, 8, true);
+    bullet.body.setSize(10, 10, true);
 
     // Целимся в текущее положение игрока (упреждения нет — от пули можно уйти)
     const angle = Phaser.Math.Angle.Between(bullet.x, bullet.y, this.player.x, this.player.y);
@@ -461,17 +379,18 @@ class PlayScene extends Phaser.Scene {
     const width = this.scale.width;
 
     const allTypes = [
-      { key: 'ast_small', baseSpeed: 230, score: 1, w: 22, h: 22, weight: 5 },
-      { key: 'ast_medium', baseSpeed: 150, score: 1, w: 42, h: 42, weight: 3 },
-      { key: 'drone', baseSpeed: 170, score: 1, w: 50, h: 16, weight: 2, zigzag: true },
+      { key: 'ast_small', baseSpeed: 230, score: 1, w: 34, h: 30, weight: 5, hit: 0.6 },
+      { key: 'ast_medium', baseSpeed: 150, score: 1, w: 60, h: 52, weight: 3, hit: 0.6 },
+      { key: 'drone', baseSpeed: 170, score: 1, w: 64, h: 34, weight: 2, zigzag: true, hit: 0.7 },
       // Охотник: подруливает к игроку, сбивается одним выстрелом
       {
         key: 'hunter',
         baseSpeed: 110,
         score: 1,
         killScore: 3,
-        w: 38,
+        w: 50,
         h: 42,
+        hit: 0.7,
         weight: 2,
         homing: true,
         homeSpeed: 150,
@@ -484,8 +403,9 @@ class PlayScene extends Phaser.Scene {
         baseSpeed: 70,
         score: 1,
         killScore: 5,
-        w: 40,
-        h: 34,
+        w: 46,
+        h: 50,
+        hit: 0.7,
         weight: 2,
         homing: true,
         homeSpeed: 90,
@@ -521,7 +441,8 @@ class PlayScene extends Phaser.Scene {
     const x = Phaser.Math.Between(margin, width - margin);
     const obstacle = this.obstacles.create(x, -40, type.key);
     obstacle.setDepth(5);
-    obstacle.body.setSize(type.w * 0.8, type.h * 0.8, true);
+    const hit = type.hit || 0.8; // доля спрайта, которая реально «бьёт»
+    obstacle.body.setSize(type.w * hit, type.h * hit, true);
     obstacle.setData('type', type);
     obstacle.setData('scored', false);
     obstacle.setData('hp', type.hp || 1);
@@ -550,7 +471,7 @@ class PlayScene extends Phaser.Scene {
     const x = Phaser.Math.Between(30, width - 30);
     const pickup = this.pickups.create(x, -30, 'shield_pickup');
     pickup.setDepth(5);
-    pickup.body.setSize(24, 24, true);
+    pickup.body.setSize(28, 28, true);
     pickup.body.setVelocityY(160);
     this.tweens.add({
       targets: pickup,
@@ -597,11 +518,10 @@ class PlayScene extends Phaser.Scene {
   activateShield() {
     this.shielded = true;
     this.shieldRemaining = this.shieldDuration; // повторный подбор обновляет таймер
-    this.player.setTint(0x4fd8e0);
 
     if (!this.shieldRing) {
       this.shieldRing = this.add
-        .circle(this.player.x, this.player.y, 30, 0x4fd8e0, 0.15)
+        .circle(this.player.x, this.player.y, 38, 0x4fd8e0, 0.15)
         .setStrokeStyle(2, 0x4fd8e0, 0.9)
         .setDepth(9);
     }
@@ -616,7 +536,7 @@ class PlayScene extends Phaser.Scene {
   deactivateShield() {
     this.shielded = false;
     this.shieldRemaining = 0;
-    this.player.clearTint();
+    this.player.setAlpha(1);
     if (this.shieldRing) this.shieldRing.setVisible(false);
     this.setShieldHudVisible(false);
   }
@@ -648,8 +568,7 @@ class PlayScene extends Phaser.Scene {
     this.shieldRing.setAlpha(blinkOn ? 1 : 0.2);
     this.shieldRing.setScale(1 + 0.05 * Math.sin(this.playTimeMs / 150));
 
-    if (blinkOn) this.player.setTint(0x4fd8e0);
-    else this.player.clearTint();
+    this.player.setAlpha(blinkOn ? 1 : 0.45);
   }
 
   // ---------- Пауза ----------
